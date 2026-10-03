@@ -55,12 +55,11 @@ def generate_prediction_card():
         else:
             font_top = font_mid = font_table = ImageFont.load_default()
 
-        # 1. TOP VALUES (PURE WHITE)
+        # 1. Top boxes (Pure White)
         period_val = f"#{current_prediction['period']}" if current_prediction['period'] else "--"
         sig_val = (current_prediction["signal"] or "--").upper()
         num_val = current_prediction["number"] or "--"
 
-        # Background patch
         draw.rectangle([(145, 412), (355, 472)], fill=(7, 14, 27))
         draw.rectangle([(398, 412), (602, 472)], fill=(7, 14, 27))
         draw.rectangle([(645, 412), (855, 472)], fill=(7, 14, 27))
@@ -78,7 +77,7 @@ def generate_prediction_card():
         draw_centered(500, 442, sig_val, (255, 255, 255), font_top)
         draw_centered(750, 442, num_val, (255, 255, 255), font_top)
 
-        # 2. CONFIDENCE & WINS
+        # 2. Stats
         draw.rectangle([(230, 492), (480, 532)], fill=(9, 18, 36))
         draw.rectangle([(510, 492), (785, 532)], fill=(9, 18, 36))
 
@@ -88,7 +87,7 @@ def generate_prediction_card():
         draw_centered(355, 512, conf_str, (0, 220, 255), font_mid)
         draw_centered(647, 512, wins_str, (0, 255, 128), font_mid)
 
-        # 3. PREVIOUS 10 RESULTS
+        # 3. Table Fill
         draw.rectangle([(140, 652), (860, 895)], fill=(7, 14, 27))
         row_y = 665
         row_gap = 23
@@ -108,35 +107,36 @@ def generate_prediction_card():
         base_img.save(out_file, "JPEG", quality=95)
         return out_file
     except Exception as img_err:
-        print(f"[!] Image error: {img_err}")
+        print(f"[!] Image generation error: {img_err}")
         return None
 
 # ================= MESSAGE LISTENER =================
 @client.on(events.NewMessage(chats=SOURCE_CHAT))
 async def message_handler(event):
     global current_prediction, history_results, last_processed_period, total_wins, current_streak
-    raw_text = event.raw_text
-    if not raw_text:
+
+    # Message text illana photo caption-ah check panrom
+    raw_content = event.message.message or event.raw_text or ""
+    if not raw_content:
         return
 
-    clean_text = unicodedata.normalize('NFKD', raw_text)
-    print("\n--- [SOURCE MESSAGE RECEIVED] ---")
+    clean_text = unicodedata.normalize('NFKD', raw_content)
+    print("\n---------------- [NEW INCOMING MESSAGE] ----------------")
     print(clean_text)
+    print("-------------------------------------------------------")
 
-    # ---------------- 1. PREDICTION SIGNAL CHECK (ROBUST REGEX) ----------------
-    # Period: detects digits anywhere after 'period'
+    # 1. PREDICTION SIGNAL CHECK FIRST
+    # Period: edhavadhu number after 'PERIOD'
     p_match = re.search(r'PERIOD[^\d]*(\d+)', clean_text, re.IGNORECASE)
-    
-    # Signal: detects BIG, SMALL, GREEN, RED, VIOLET
-    s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_text, re.IGNORECASE)
-    
-    # Number: detects formats like 2/1, 2-1 or single numbers
+    # Signal: BIG, SMALL, GREEN, RED, VIOLET
+    s_match = re.search(r'\b(BIG|SMALL|GREEN|RED|VIOLET)\b', clean_text, re.IGNORECASE)
+    # Number: format like 2/1, 2-1 or single digit
     n_match = re.search(r'NUMBER[^\d]*(\d+[\s\/\-]+\d+|\d+)', clean_text, re.IGNORECASE)
 
-    # Prediction confirmation: MUST have PERIOD + SIGNAL, and NOT be a pure result line
-    is_result_format = bool(re.search(r'(^|\n)\s*(RESULT|❌\s*LOSS|✅\s*WIN)', clean_text, re.IGNORECASE))
-    
-    if p_match and s_match and not is_result_format:
+    # Pure result message illa-nu confirm panrom
+    is_result_msg = bool(re.search(r'(RESULT\s*=>|❌\s*LOSS|✅\s*WIN)', clean_text, re.IGNORECASE))
+
+    if p_match and s_match and not is_result_msg:
         period = p_match.group(1)
         signal = s_match.group(1).upper()
         number = n_match.group(1).strip() if n_match else "--"
@@ -148,7 +148,7 @@ async def message_handler(event):
             current_prediction["number"] = number
             current_prediction["confidence"] = random.randint(84, 96)
 
-            print(f"[+] Prediction Triggered: #{period} | {signal} | {number}")
+            print(f"[+] Prediction Extracted: Period #{period} | Signal {signal} | Number {number}")
             
             img_path = generate_prediction_card()
             caption_text = "contact : @Gara00077"
@@ -156,16 +156,16 @@ async def message_handler(event):
             try:
                 if img_path and os.path.exists(img_path):
                     await client.send_file(TARGET_CHAT, img_path, caption=caption_text)
-                    print("[SUCCESS] Prediction Card Delivered to Target!")
+                    print("[SUCCESS] Prediction Image Sent to Target Channel!")
                 else:
                     await client.send_message(TARGET_CHAT, caption_text)
             except Exception as send_err:
                 print(f"[!] Send error: {send_err}")
         return
 
-    # ---------------- 2. WIN / LOSS CHECK ----------------
-    is_win = bool(re.search(r'(^|\s|✅)\s*WIN(\s|!|$)', clean_text, re.IGNORECASE))
-    is_loss = bool(re.search(r'(^|\s|❌)\s*LOSS(\s|!|$)|LOSE', clean_text, re.IGNORECASE))
+    # 2. WIN / LOSS RESULTS CHECK
+    is_win = bool(re.search(r'(\bWIN\b|✅\s*WIN)', clean_text, re.IGNORECASE)) and not bool(re.search(r'WINGO', clean_text, re.IGNORECASE))
+    is_loss = bool(re.search(r'(\bLOSS\b|\bLOSE\b|❌\s*LOSS)', clean_text, re.IGNORECASE))
 
     if is_win or is_loss:
         res_label = "WIN" if is_win else "LOSS"
@@ -191,7 +191,7 @@ async def message_handler(event):
             history_results = history_results[-10:]
 
         await client.send_message(TARGET_CHAT, res_msg)
-        print(f"[+] Result Delivered: {res_label} for Period #{res_period}")
+        print(f"[+] Result Message Sent: {res_label} for Period #{res_period}")
         return
 
 print("[-] AKAZA AUTO Bot is Running...")
