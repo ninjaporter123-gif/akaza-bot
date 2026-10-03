@@ -8,11 +8,12 @@ from PIL import Image, ImageDraw, ImageFont
 API_ID = 37846916
 API_HASH = "4e3784d4d626f589b50158e92cc93d5d"
 
-# உங்கள் அதே session பெயர்
+# GitHub-ல் உள்ள உங்கள் பழைய session பெயர்
 SESSION_NAME = "akaza_user"
 
-SOURCE_CHAT = "@wingo1min_bot"             # சிக்னல் வரும் source பாட்
-TARGET_CHAT = "@your_channel_username"     # உங்கள் டெலிகிராம் சேனல் Username (@...)
+# உங்க Source Bot/Channel மற்றும் Target Channel Usernames
+SOURCE_CHAT = "predictor7700"          # https://t.me/predictor7700
+TARGET_CHAT = "akazagodmodeelite"      # https://t.me/akazagodmodeelite
 
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
@@ -32,12 +33,13 @@ def generate_prediction_card(period, signal, number):
 
     sig_upper = signal.upper()
     if "GREEN" in sig_upper or "SMALL" in sig_upper:
-        sig_color = (0, 255, 128)      # நியான் க்ரீன்
+        sig_color = (0, 255, 128)      # Neon Green
     elif "RED" in sig_upper or "BIG" in sig_upper:
-        sig_color = (255, 50, 70)       # நியான் ரெட்
+        sig_color = (255, 50, 70)       # Neon Red
     else:
-        sig_color = (0, 220, 255)       # சியான் ப்ளூ
+        sig_color = (0, 220, 255)       # Cyan Blue
 
+    # கீழ் பகுதியில் Neon box
     strip_y = height - 220
     draw.rectangle([(80, strip_y), (width - 80, height - 60)], fill=(10, 15, 30, 220), outline=(0, 200, 255, 255), width=3)
     
@@ -69,7 +71,7 @@ async def message_handler(event):
     s_match = re.search(r'SIGNAL.*?(BIG|SMALL|RED|GREEN|VIOLET)', clean_text, re.IGNORECASE)
     signal = s_match.group(1).upper() if s_match else None
 
-    # 3. Number Regex
+    # 3. Number Regex (2/0 போன்றவை)
     n_match = re.search(r'NUMBER.*?([0-9\/\s]+)', clean_text, re.IGNORECASE)
     number = n_match.group(1).strip() if n_match else ""
 
@@ -92,3 +94,4 @@ async def message_handler(event):
 print("[-] AKAZA AUTO Bot is Running...")
 client.start()
 client.run_until_disconnected()
+    
