@@ -7,10 +7,8 @@ from PIL import Image, ImageDraw, ImageFont
 # ================= TELEGRAM CONFIG =================
 API_ID = 37846916
 API_HASH = "4e3784d4d626f589b50158e92cc93d5d"
-
 SESSION_NAME = "akaza_user"
 
-# Usernames crt-ah @ oda configure panniyachu
 SOURCE_CHAT = "@predictor7700"          
 TARGET_CHAT = "@akazagodmodeelite"      
 
@@ -18,24 +16,24 @@ client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
 # ================= IMAGE GENERATOR =================
 def generate_prediction_card(period, signal, number):
-    # Template image illana None return pannum (crash aagathu)
     if not os.path.exists("template.png"):
-        print("[!] ERROR: template.png file kanom! GitHub repo-la template.png upload pannunga.")
+        print("[!] ERROR: template.png file kanom!")
         return None
 
     try:
         base_img = Image.open("template.png").convert("RGBA")
         width, height = base_img.size
         
-        overlay = Image.new("RGBA", base_img.size, (255, 255, 255, 0))
-        draw = ImageDraw.Draw(overlay)
+        # 1024x1024 image-ku resize / scale panni handle panrom
+        draw = ImageDraw.Draw(base_img)
         
+        # Font setup (Image size-ku etha mathiri size)
         try:
-            font_large = ImageFont.truetype("DejaVuSans-Bold.ttf", 46)
-            font_small = ImageFont.truetype("DejaVuSans.ttf", 34)
+            font = ImageFont.truetype("DejaVuSans-Bold.ttf", 36)
         except Exception:
-            font_large = font_small = ImageFont.load_default()
+            font = ImageFont.load_default()
 
+        # Signal color setup
         sig_upper = signal.upper()
         if "GREEN" in sig_upper or "SMALL" in sig_upper:
             sig_color = (0, 255, 128)      # Neon Green
@@ -44,21 +42,33 @@ def generate_prediction_card(period, signal, number):
         else:
             sig_color = (0, 220, 255)       # Cyan Blue
 
-        # Neon bar box
-        strip_y = height - 220
-        draw.rectangle([(80, strip_y), (width - 80, height - 60)], fill=(10, 15, 30, 220), outline=(0, 200, 255, 255), width=3)
-        
-        draw.text((120, strip_y + 25), f"PERIOD : #{period}", fill=(255, 255, 255), font=font_small)
-        draw.text((120, strip_y + 85), f"SIGNAL : {sig_upper}", fill=sig_color, font=font_large)
-        if number:
-            draw.text((width - 340, strip_y + 85), f"NUM: {number}", fill=(255, 215, 0), font=font_large)
+        # Text values
+        period_text = f"#{period}"
+        signal_text = sig_upper
+        number_text = str(number) if number else "--"
 
-        final_img = Image.alpha_composite(base_img, overlay).convert("RGB")
+        # --- EXACT BOX COORDINATES (1024x1024 Template) ---
+        # 1. Period Box Center: (x=250, y=440)
+        # 2. Signal Box Center: (x=500, y=440)
+        # 3. Number Box Center: (x=750, y=440)
+
+        # Helper function text-ah box center-la place panna
+        def draw_centered_text(xy, text, fill_color, font_obj):
+            bbox = font_obj.getbbox(text)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            draw.text((xy[0] - w / 2, xy[1] - h / 2), text, fill=fill_color, font=font_obj)
+
+        # Boxes ulla crt-ah draw panrom
+        draw_centered_text((250, 442), period_text, (255, 255, 255), font)
+        draw_centered_text((500, 442), signal_text, sig_color, font)
+        draw_centered_text((750, 442), number_text, (255, 215, 0), font)
+
         out_file = "send_prediction.jpg"
-        final_img.save(out_file, "JPEG", quality=95)
+        base_img.convert("RGB").save(out_file, "JPEG", quality=95)
         return out_file
     except Exception as img_err:
-        print(f"[!] Image create panrathula error: {img_err}")
+        print(f"[!] Image create error: {img_err}")
         return None
 
 # ================= MESSAGE LISTENER =================
@@ -70,16 +80,14 @@ async def message_handler(event):
 
     print("\n--- [NEW SOURCE MSG RECEIVED] ---")
     print(raw_text)
-    print("---------------------------------")
 
-    # Math unicode fonts normal text-ah mathum
     clean_text = unicodedata.normalize('NFKD', raw_text)
 
     # 1. Period Regex
     p_match = re.search(r'PERIOD.*?(\d+)', clean_text, re.IGNORECASE)
     period = p_match.group(1) if p_match else None
 
-    # 2. Signal Regex (BIG / SMALL / GREEN / RED / VIOLET)
+    # 2. Signal Regex
     s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_text, re.IGNORECASE)
     signal = s_match.group(1).upper() if s_match else None
 
@@ -88,42 +96,22 @@ async def message_handler(event):
     number = n_match.group(1).strip() if n_match else ""
 
     if period and signal:
-        print(f"[+] Prediction Parsed: Period={period} | Signal={signal} | Number={number}")
+        print(f"[+] Parsed: Period={period} | Signal={signal} | Number={number}")
         
-        caption_text = (
-            f"⚡ **AKAZA AUTO PREDICTION** ⚡\n\n"
-            f"🎯 **Period:** `#{period}`\n"
-            f"🔮 **Prediction:** **{signal}**\n"
-            f"🔢 **Number:** `{number}`\n\n"
-            f"🚀 *Fast & Automated Signals*"
-        )
+        # Keela caption-la neenga keta username mattum
+        caption_text = "User name : @Gara00077"
 
         img_path = generate_prediction_card(period, signal, number)
         
         try:
             if img_path and os.path.exists(img_path):
                 await client.send_file(TARGET_CHAT, img_path, caption=caption_text)
-                print("[SUCCESS] Image sent to Target Channel!")
+                print("[SUCCESS] Image with centered text sent to channel!")
             else:
-                # Oruvelai template.png illana crash aagama Text-avathu pogum
                 await client.send_message(TARGET_CHAT, caption_text)
-                print("[SUCCESS] Text message sent to Target Channel (Template image missing)!")
         except Exception as send_err:
-            print(f"[!] Send panrathula error: {send_err}")
-    else:
-        print("[-] Message vandhuchu aana Signal/Period extract aagala (Regex mismatch).")
+            print(f"[!] Send error: {send_err}")
 
-async def main():
-    print("[-] Checking target channel connection...")
-    try:
-        target_entity = await client.get_entity(TARGET_CHAT)
-        print(f"[+] Connected to Target Channel: {target_entity.title}")
-    except Exception as e:
-        print(f"[!] Target channel connect panna mudila: {e}")
-        print("NOTE: Unga akaza_user account intha channel-la Admin-ah irukannu check pannunga!")
-
-    print("[-] AKAZA AUTO Bot is Running and Waiting for Signals...")
-
+print("[-] AKAZA AUTO Bot is Running...")
 client.start()
-client.loop.run_until_complete(main())
 client.run_until_disconnected()
