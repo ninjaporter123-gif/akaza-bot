@@ -239,7 +239,7 @@ HTML_CODE = """
             border-radius: 8px;
             font-family: 'Rajdhani', sans-serif;
             font-size: 16px;
-            margin: 12px 0;
+            margin: 10px 0;
             outline: none;
             text-align: center;
         }
@@ -262,8 +262,8 @@ HTML_CODE = """
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: rgba(255,255,255,0.04);
-            padding: 6px 10px;
+            background: rgba(255,255,255,0.06);
+            padding: 8px 12px;
             margin: 6px 0;
             border-radius: 6px;
             font-size: 13px;
@@ -291,10 +291,10 @@ HTML_CODE = """
         </div>
 
         <div style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
-            <label style="font-size: 12px; color: #8da4c4;">GENERATE NEW TOKEN</label>
+            <label style="font-size: 12px; color: #8da4c4;">CREATE ACCESS TOKEN</label>
             <input type="text" id="newTokenName" class="cyber-input" placeholder="Token Name (e.g. VIP_USER1)" style="text-align: left; padding: 8px 12px;">
             <div style="display: flex; gap: 8px;">
-                <input type="number" id="newDuration" class="cyber-input" placeholder="Duration" style="width: 50%; text-align: center; padding: 8px;">
+                <input type="number" id="newDuration" class="cyber-input" placeholder="Duration (e.g. 24)" style="width: 50%; text-align: center; padding: 8px;">
                 <select id="durationType" class="cyber-input" style="width: 50%; padding: 8px;">
                     <option value="minutes">Minutes</option>
                     <option value="hours" selected>Hours</option>
@@ -368,7 +368,7 @@ HTML_CODE = """
 </div>
 
 <script>
-    let activeToken = localStorage.getItem('akaza_user_token') || '';
+    let activeToken = localStorage.getItem('akaza_user_token') || 'NIRANJAN_VIP';
     let adminAuthToken = '';
 
     function submitToken() {
@@ -450,6 +450,7 @@ HTML_CODE = """
         }
     }
 
+    // ADMIN LOGIC WITH POST APIS
     function openAdminPrompt() {
         const pass = prompt("ENTER ADMIN PASSWORD:");
         if (pass === "niranjan123") {
@@ -466,21 +467,23 @@ HTML_CODE = """
     }
 
     async function loadAdminTokens() {
-        const res = await fetch(`/api/admin/tokens?pass=${adminAuthToken}`);
+        const res = await fetch(`/api/admin/tokens?pass=${encodeURIComponent(adminAuthToken)}`);
         const data = await res.json();
         let html = '';
-        data.tokens.forEach(t => {
-            html += `
-                <div class="admin-token-row">
-                    <div>
-                        <strong style="color:var(--neon-blue);">${t.token}</strong><br>
-                        <span style="font-size:11px; color:#8da4c4;">Rem: ${formatTime(t.remaining_seconds)}</span>
+        if (data.tokens && data.tokens.length > 0) {
+            data.tokens.forEach(t => {
+                html += `
+                    <div class="admin-token-row">
+                        <div>
+                            <strong style="color:var(--neon-blue);">${t.token}</strong><br>
+                            <span style="font-size:11px; color:#8da4c4;">Rem: ${formatTime(t.remaining_seconds)}</span>
+                        </div>
+                        <button onclick="deleteToken('${t.token}')" style="background:#ff334b; border:none; color:#fff; border-radius:4px; padding:4px 8px; cursor:pointer;">DELETE</button>
                     </div>
-                    <button onclick="deleteToken('${t.token}')" style="background:#ff334b; border:none; color:#fff; border-radius:4px; padding:3px 8px; cursor:pointer;">DEL</button>
-                </div>
-            `;
-        });
-        document.getElementById('adminTokenList').innerHTML = html || '<p style="color:#777;font-size:12px;">No tokens</p>';
+                `;
+            });
+        }
+        document.getElementById('adminTokenList').innerHTML = html || '<p style="color:#777;font-size:12px;">No tokens yet</p>';
     }
 
     async function createToken() {
@@ -488,25 +491,43 @@ HTML_CODE = """
         const duration = parseFloat(document.getElementById('newDuration').value);
         const type = document.getElementById('durationType').value;
 
-        if (!tokenName || isNaN(duration)) {
-            alert("Enter valid token name and duration");
+        if (!tokenName || isNaN(duration) || duration <= 0) {
+            alert("Please enter a valid Token Name and Duration!");
             return;
         }
 
-        const res = await fetch(`/api/admin/add_token?pass=${adminAuthToken}&token=${encodeURIComponent(tokenName)}&duration=${duration}&type=${type}`);
-        const data = await res.json();
-        if (data.status === 'success') {
-            document.getElementById('newTokenName').value = '';
-            document.getElementById('newDuration').value = '';
-            loadAdminTokens();
-        } else {
-            alert(data.msg || 'Error adding token');
+        try {
+            const res = await fetch('/api/admin/add_token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pass: adminAuthToken,
+                    token: tokenName,
+                    duration: duration,
+                    type: type
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                alert(`Token '${tokenName}' created successfully!`);
+                document.getElementById('newTokenName').value = '';
+                document.getElementById('newDuration').value = '';
+                loadAdminTokens();
+            } else {
+                alert(data.msg || 'Failed to create token');
+            }
+        } catch (e) {
+            alert("Network error creating token: " + e);
         }
     }
 
     async function deleteToken(tok) {
-        if (!confirm(`Delete token ${tok}?`)) return;
-        await fetch(`/api/admin/del_token?pass=${adminAuthToken}&token=${encodeURIComponent(tok)}`);
+        if (!confirm(`Delete token: ${tok}?`)) return;
+        await fetch('/api/admin/del_token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pass: adminAuthToken, token: tok })
+        });
         loadAdminTokens();
     }
 
@@ -518,6 +539,7 @@ HTML_CODE = """
 </html>
 """
 
+# ================= ROUTES =================
 @server.route('/')
 def home():
     return render_template_string(HTML_CODE)
@@ -533,30 +555,4 @@ def api_live():
 
         expiry = USER_TOKENS[token]
         if current_time > expiry:
-            return jsonify({"access": False, "msg": "Your Access Token has Expired!"})
-
-        resp = dict(live_data)
-        resp["access"] = True
-        resp["remaining_seconds"] = int(expiry - current_time)
-        return jsonify(resp)
-
-@server.route('/api/admin/tokens')
-def get_tokens():
-    pwd = request.args.get('pass')
-    if pwd != ADMIN_PASS:
-        return jsonify({"status": "error", "msg": "Unauthorized"}), 403
-
-    current_time = time.time()
-    tokens_list = []
-    with data_lock:
-        for t, exp in USER_TOKENS.items():
-            rem = max(0, int(exp - current_time))
-            tokens_list.append({"token": t, "remaining_seconds": rem})
-
-    return jsonify({"status": "success", "tokens": tokens_list})
-
-@server.route('/api/admin/add_token')
-def add_token():
-    pwd = request.args.get('pass')
-    if pwd != ADMIN_PASS:
-        return jsoni
+            return jsonify({"access": False, "ms
