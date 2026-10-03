@@ -1,10 +1,7 @@
-import os
 import re
 import random
-import urllib.request
 import unicodedata
 from telethon import TelegramClient, events
-from PIL import Image, ImageDraw, ImageFont
 
 # ================= TELEGRAM CONFIG =================
 API_ID = 37846916
@@ -16,21 +13,12 @@ TARGET_CHAT = "@akazagodmodeelite"
 
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
-# ================= FONT SETUP =================
-FONT_FILE = "Roboto-Bold.ttf"
-if not os.path.exists(FONT_FILE):
-    try:
-        font_url = "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf"
-        urllib.request.urlretrieve(font_url, FONT_FILE)
-    except Exception as e:
-        print(f"[!] Font error: {e}")
-
 # ================= STATE & STATS =================
 current_prediction = {
     "period": None,
     "signal": None,
     "number": None,
-    "confidence": 88
+    "confidence": 92
 }
 
 history_results = []
@@ -38,102 +26,67 @@ last_processed_period = None
 total_wins = 124
 current_streak = 3
 
-# ================= IMAGE GENERATOR =================
-def generate_prediction_card():
-    if not os.path.exists("template.png"):
-        print("[!] ERROR: template.png file kanom!")
-        return None
+# ================= TEXT MESSAGE GENERATOR =================
+def format_prediction_card():
+    period_val = f"#{current_prediction['period']}" if current_prediction['period'] else "--"
+    sig_val = (current_prediction["signal"] or "--").upper()
+    num_val = current_prediction["number"] or "--"
+    conf_val = current_prediction.get("confidence", 92)
 
-    try:
-        base_img = Image.open("template.png").convert("RGB")
-        draw = ImageDraw.Draw(base_img)
+    # Table layout
+    table_lines = "┌───┬────────┬────────┬────────┬────────┐\n"
+    table_lines += "│ # │ PERIOD │ SIGNAL │ NUMBER │ RESULT │\n"
+    table_lines += "├───┼────────┼────────┼────────┼────────┤\n"
+    
+    recent_history = history_results[-10:]
+    if not recent_history:
+        table_lines += "│ - │   --   │   --   │   --   │   --   │\n"
+    else:
+        for idx, item in enumerate(recent_history):
+            r_num = str(idx + 1).center(3)
+            r_p = str(item.get("period", "--"))[:6].center(8)
+            r_s = str(item.get("signal", "--"))[:6].center(8)
+            r_n = str(item.get("number", "--"))[:6].center(8)
+            r_res = str(item.get("result", "--"))[:6].center(8)
+            table_lines += f"│{r_num}│{r_p}│{r_s}│{r_n}│{r_res}│\n"
         
-        if os.path.exists(FONT_FILE):
-            font_top = ImageFont.truetype(FONT_FILE, 38)
-            font_mid = ImageFont.truetype(FONT_FILE, 20)
-            font_table = ImageFont.truetype(FONT_FILE, 22)
-        else:
-            font_top = font_mid = font_table = ImageFont.load_default()
+    table_lines += "└───┴────────┴────────┴────────┴────────┘"
 
-        # 1. Top boxes (Pure White)
-        period_val = f"#{current_prediction['period']}" if current_prediction['period'] else "--"
-        sig_val = (current_prediction["signal"] or "--").upper()
-        num_val = current_prediction["number"] or "--"
-
-        draw.rectangle([(145, 412), (355, 472)], fill=(7, 14, 27))
-        draw.rectangle([(398, 412), (602, 472)], fill=(7, 14, 27))
-        draw.rectangle([(645, 412), (855, 472)], fill=(7, 14, 27))
-
-        def draw_centered(box_cx, box_cy, text, color, font_obj):
-            try:
-                bbox = draw.textbbox((0, 0), text, font=font_obj)
-                w = bbox[2] - bbox[0]
-                h = bbox[3] - bbox[1]
-                draw.text((box_cx - (w / 2), box_cy - (h / 2) - 3), text, fill=color, font=font_obj)
-            except Exception:
-                draw.text((box_cx - 25, box_cy - 10), text, fill=color, font=font_obj)
-
-        draw_centered(250, 442, period_val, (255, 255, 255), font_top)
-        draw_centered(500, 442, sig_val, (255, 255, 255), font_top)
-        draw_centered(750, 442, num_val, (255, 255, 255), font_top)
-
-        # 2. Stats
-        draw.rectangle([(230, 492), (480, 532)], fill=(9, 18, 36))
-        draw.rectangle([(510, 492), (785, 532)], fill=(9, 18, 36))
-
-        conf_str = f"CONFIDENCE: {current_prediction['confidence']}%"
-        wins_str = f"WINS: {total_wins}  STREAK: {current_streak}"
-
-        draw_centered(355, 512, conf_str, (0, 220, 255), font_mid)
-        draw_centered(647, 512, wins_str, (0, 255, 128), font_mid)
-
-        # 3. Table Fill
-        draw.rectangle([(140, 652), (860, 895)], fill=(7, 14, 27))
-        row_y = 665
-        row_gap = 23
-
-        for idx, item in enumerate(history_results[-9:]):
-            curr_y = row_y + (idx * row_gap)
-            draw.text((165, curr_y), str(idx + 1), fill=(200, 210, 225), font=font_table)
-            draw.text((240, curr_y), str(item.get("period", "--")), fill=(255, 255, 255), font=font_table)
-            draw.text((410, curr_y), str(item.get("signal", "--")), fill=(255, 255, 255), font=font_table)
-            draw.text((585, curr_y), str(item.get("number", "--")), fill=(255, 215, 0), font=font_table)
-            
-            res_val = str(item.get("result", "--"))
-            res_col = (0, 255, 128) if "WIN" in res_val else (255, 60, 80)
-            draw.text((750, curr_y), res_val, fill=res_col, font=font_table)
-
-        out_file = "send_prediction.jpg"
-        base_img.save(out_file, "JPEG", quality=95)
-        return out_file
-    except Exception as img_err:
-        print(f"[!] Image generation error: {img_err}")
-        return None
+    msg = (
+        "╔════════════════════════════════════╗\n"
+        "⚡       AKAZA ∞ AUTO PREDICTION       ⚡\n"
+        "╚════════════════════════════════════╝\n\n"
+        f"🎯 PERIOD  : {period_val}\n"
+        f"🔮 SIGNAL  : {sig_val}\n"
+        f"🔢 NUMBER  : {num_val}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 CONFIDENCE : {conf_val}%\n"
+        f"🏆 WINS : {total_wins}  |  🔥 STREAK : {current_streak}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📋 PREVIOUS 10 RESULTS:\n"
+        f"```\n{table_lines}```\n\n"
+        "contact : @Gara00077"
+    )
+    return msg
 
 # ================= MESSAGE LISTENER =================
 @client.on(events.NewMessage(chats=SOURCE_CHAT))
 async def message_handler(event):
     global current_prediction, history_results, last_processed_period, total_wins, current_streak
 
-    # Message text illana photo caption-ah check panrom
     raw_content = event.message.message or event.raw_text or ""
     if not raw_content:
         return
 
     clean_text = unicodedata.normalize('NFKD', raw_content)
-    print("\n---------------- [NEW INCOMING MESSAGE] ----------------")
+    print("\n--- [SOURCE MESSAGE RECEIVED] ---")
     print(clean_text)
-    print("-------------------------------------------------------")
 
-    # 1. PREDICTION SIGNAL CHECK FIRST
-    # Period: edhavadhu number after 'PERIOD'
+    # 1. PREDICTION SIGNAL CHECK
     p_match = re.search(r'PERIOD[^\d]*(\d+)', clean_text, re.IGNORECASE)
-    # Signal: BIG, SMALL, GREEN, RED, VIOLET
     s_match = re.search(r'\b(BIG|SMALL|GREEN|RED|VIOLET)\b', clean_text, re.IGNORECASE)
-    # Number: format like 2/1, 2-1 or single digit
     n_match = re.search(r'NUMBER[^\d]*(\d+[\s\/\-]+\d+|\d+)', clean_text, re.IGNORECASE)
 
-    # Pure result message illa-nu confirm panrom
     is_result_msg = bool(re.search(r'(RESULT\s*=>|❌\s*LOSS|✅\s*WIN)', clean_text, re.IGNORECASE))
 
     if p_match and s_match and not is_result_msg:
@@ -146,19 +99,14 @@ async def message_handler(event):
             current_prediction["period"] = period
             current_prediction["signal"] = signal
             current_prediction["number"] = number
-            current_prediction["confidence"] = random.randint(84, 96)
+            current_prediction["confidence"] = random.randint(86, 96)
 
             print(f"[+] Prediction Extracted: Period #{period} | Signal {signal} | Number {number}")
             
-            img_path = generate_prediction_card()
-            caption_text = "contact : @Gara00077"
-
+            card_msg = format_prediction_card()
             try:
-                if img_path and os.path.exists(img_path):
-                    await client.send_file(TARGET_CHAT, img_path, caption=caption_text)
-                    print("[SUCCESS] Prediction Image Sent to Target Channel!")
-                else:
-                    await client.send_message(TARGET_CHAT, caption_text)
+                await client.send_message(TARGET_CHAT, card_msg)
+                print("[SUCCESS] Formatted Text Card Sent to Target!")
             except Exception as send_err:
                 print(f"[!] Send error: {send_err}")
         return
@@ -180,8 +128,9 @@ async def message_handler(event):
             current_streak = 0
             res_msg = f"🥺🥺🥺 **LOSS NEXT WILL RECOVER** 💔💔\n\n🎯 Period: #{res_period}\n\ncontact : @Gara00077"
 
+        # Table history update
         history_results.append({
-            "period": res_period,
+            "period": f"#{res_period}",
             "signal": current_prediction["signal"] or "--",
             "number": current_prediction["number"] or "--",
             "result": res_label
@@ -194,6 +143,6 @@ async def message_handler(event):
         print(f"[+] Result Message Sent: {res_label} for Period #{res_period}")
         return
 
-print("[-] AKAZA AUTO Bot is Running...")
+print("[-] AKAZA AUTO Text-Bot is Running...")
 client.start()
 client.run_until_disconnected()
