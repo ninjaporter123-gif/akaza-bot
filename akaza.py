@@ -73,61 +73,37 @@ def format_prediction_card():
 async def message_handler(event):
     global current_prediction, history_results, last_processed_period, total_wins, current_streak
 
-    # Image caption or direct text
-    raw_content = event.message.message or event.raw_text or ""
+    # Extract all possible text sources (Text, Caption, Alt Text)
+    msg_obj = event.message
+    raw_content = ""
+    if msg_obj.message:
+        raw_content = msg_obj.message
+    elif msg_obj.text:
+        raw_content = msg_obj.text
+
     if not raw_content:
         return
 
+    # Normalize stylized Unicode fonts to plain english
     clean_text = unicodedata.normalize('NFKD', raw_content)
-    print("\n================== [SOURCE MSG] ==================")
+    clean_upper = clean_text.upper()
+
+    print("\n------------------- INCOMING SOURCE MSG -------------------")
     print(clean_text)
-    print("==================================================")
+    print("-----------------------------------------------------------")
 
-    # 1. NEW PREDICTION SIGNAL CHECK (EMOJI & BRACKET TOLERANT)
-    # Checks for digits after PERIOD even if brackets or arrows are present: ( 341 ) or => 341
-    p_match = re.search(r'PERIOD[^\d\n]*\(?\s*(\d+)\s*\)?', clean_text, re.IGNORECASE)
-    
-    # Searches directly for prediction words ignoring surrounding emojis
-    s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_text, re.IGNORECASE)
-    
-    # Numbers like 2/1, 2-1 or 9
-    n_match = re.search(r'NUMBER[^\d\n]*(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
+    # 1. PURE RESULT CHECK (WIN / LOSS)
+    # Check if message starts with LOSS or RESULT or contains WIN/LOSS without signal
+    is_pure_result = bool(re.search(r'(RESULT\s*=>|❌\s*LOSS|LOSS\s*=>)', clean_text, re.IGNORECASE))
+    is_win_text = ("WIN" in clean_upper and "WINGO" not in clean_upper) or "✅" in clean_text
+    is_loss_text = "LOSS" in clean_upper or "LOSE" in clean_upper or "❌" in clean_text
 
-    # Must not be a result summary card
-    is_result_header = bool(re.search(r'(RESULT\s*=>|❌\s*LOSS|✅\s*WIN)', clean_text, re.IGNORECASE))
-
-    if p_match and s_match and not is_result_header:
-        period = p_match.group(1).lstrip("0") or p_match.group(1)
-        signal = s_match.group(1).upper()
-        number = n_match.group(1).strip() if n_match else "--"
-
-        if period != last_processed_period:
-            last_processed_period = period
-            current_prediction["period"] = period
-            current_prediction["signal"] = signal
-            current_prediction["number"] = number
-            current_prediction["confidence"] = random.randint(86, 96)
-
-            print(f"[MATCH SUCCESS] Period: #{period} | Signal: {signal} | Number: {number}")
-            
-            card_msg = format_prediction_card()
-            try:
-                await client.send_message(TARGET_CHAT, card_msg)
-                print("[SENT] Prediction Text Card posted to Target!")
-            except Exception as send_err:
-                print(f"[!] Send error: {send_err}")
-        return
-
-    # 2. WIN / LOSS RESULTS CHECK
-    is_win = bool(re.search(r'(\bWIN\b|✅\s*WIN)', clean_text, re.IGNORECASE)) and not bool(re.search(r'WINGO', clean_text, re.IGNORECASE))
-    is_loss = bool(re.search(r'(\bLOSS\b|\bLOSE\b|❌\s*LOSS)', clean_text, re.IGNORECASE))
-
-    if is_win or is_loss:
-        res_label = "WIN" if is_win else "LOSS"
-        res_p = re.search(r'PERIOD[^\d\n]*#?\(?\s*(\d+)\s*\)?', clean_text, re.IGNORECASE)
+    if is_pure_result or (is_win_text and "SIGNAL" not in clean_upper) or (is_loss_text and "SIGNAL" not in clean_upper):
+        res_label = "WIN" if is_win_text else "LOSS"
+        res_p = re.search(r'(\d{3,4})', clean_text)
         res_period = res_p.group(1).lstrip("0") if res_p else (current_prediction["period"] or "--")
 
-        if is_win:
+        if is_win_text:
             total_wins += 1
             current_streak += 1
             res_msg = f"🥳🥳🥳 **WIN WIN WIN!!** 🎉🎉🎉\n\n🎯 Period: #{res_period}\n\ncontact : @Gara00077"
@@ -146,7 +122,42 @@ async def message_handler(event):
             history_results = history_results[-10:]
 
         await client.send_message(TARGET_CHAT, res_msg)
-        print(f"[SENT] Result message posted: {res_label} for Period #{res_period}")
+        print(f"[+] Result Processed & Sent: {res_label} for Period #{res_period}")
+        return
+
+    # 2. PREDICTION SIGNAL CHECK
+    # Match any 3 or 4 digit period number (e.g., 341, 0341)
+    p_match = re.search(r'PERIOD[^\d\n]*\(?\s*(\d{3,4})\s*\)?', clean_text, re.IGNORECASE)
+    if not p_match:
+        p_match = re.search(r'(\d{3,4})', clean_text)
+
+    # Match Signal keyword
+    s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_upper)
+
+    # Match Number pattern (e.g. 2/1, 2-1 or single digits)
+    n_match = re.search(r'NUMBER[^\d\n]*(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
+
+    if p_match and s_match:
+        period = p_match.group(1).lstrip("0") or p_match.group(1)
+        signal = s_match.group(1)
+        number = n_match.group(1).strip() if n_match else "--"
+
+        # Duplicate filter check
+        if period != last_processed_period:
+            last_processed_period = period
+            current_prediction["period"] = period
+            current_prediction["signal"] = signal
+            current_prediction["number"] = number
+            current_prediction["confidence"] = random.randint(86, 96)
+
+            print(f"[+] Prediction Extracted: Period #{period} | Signal {signal} | Number {number}")
+            
+            card_msg = format_prediction_card()
+            try:
+                await client.send_message(TARGET_CHAT, card_msg)
+                print("[SUCCESS] Prediction Text Card Sent to Target!")
+            except Exception as send_err:
+                print(f"[!] Target send error: {send_err}")
         return
 
 print("[-] AKAZA AUTO Text-Bot is Running...")
