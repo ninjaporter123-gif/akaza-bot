@@ -12,12 +12,12 @@ API_ID = 37846916
 API_HASH = "4e3784d4d626f589b50158e92cc93d5d"
 SESSION_NAME = "akaza_user"
 
-# Source channel mattum thaan monitor pannum
+# Source channel mattum monitor pannum
 SOURCE_CHAT = "@predictor7700"
 
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
-# ================= REAL-TIME SHARED DATA =================
+# ================= REAL-TIME DATA =================
 data_lock = threading.Lock()
 
 live_data = {
@@ -94,7 +94,6 @@ HTML_CODE = """
             margin-bottom: 20px;
         }
 
-        /* 3 Box Metrics Grid */
         .metrics-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
@@ -130,7 +129,6 @@ HTML_CODE = """
         .sig-red { color: var(--neon-red) !important; text-shadow: 0 0 12px var(--neon-red); }
         .sig-blue { color: var(--neon-blue) !important; text-shadow: 0 0 12px var(--neon-blue); }
 
-        /* Stats Bar */
         .stats-bar {
             display: flex;
             justify-content: space-around;
@@ -143,7 +141,6 @@ HTML_CODE = """
             font-weight: 700;
         }
 
-        /* History Table Section */
         .history-card {
             background: rgba(2, 6, 16, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -261,10 +258,8 @@ HTML_CODE = """
             const res = await fetch('/api/live');
             const data = await res.json();
 
-            // Period
             document.getElementById('periodBox').innerText = '#' + (data.period || '---');
 
-            // Signal
             const sigEl = document.getElementById('signalBox');
             const sigVal = (data.signal || 'WAIT').toUpperCase();
             sigEl.innerText = sigVal;
@@ -278,13 +273,11 @@ HTML_CODE = """
                 sigEl.classList.add('sig-blue');
             }
 
-            // Number & Stats
             document.getElementById('numberBox').innerText = data.number || '--';
             document.getElementById('confBox').innerText = (data.confidence || 92) + '%';
             document.getElementById('winsBox').innerText = data.wins || 0;
             document.getElementById('streakBox').innerText = data.streak || 0;
 
-            // History rows
             if (data.history && data.history.length > 0) {
                 let rowsHtml = '';
                 data.history.slice(-10).forEach((item, index) => {
@@ -306,7 +299,6 @@ HTML_CODE = """
         }
     }
 
-    // Auto-sync every 1.5 seconds from server
     setInterval(fetchSourceData, 1500);
     fetchSourceData();
 </script>
@@ -414,4 +406,4 @@ if __name__ == "__main__":
     print("[-] Telethon listening ONLY to Source Channel...")
     client.start()
     client.run_until_disconnected()
-    
+        
