@@ -1,2 +1,3 @@
 telethon
-pillow
+flask
+flask-cors
