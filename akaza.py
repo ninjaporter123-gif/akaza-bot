@@ -1,5 +1,6 @@
 import os
 import re
+import urllib.request
 import unicodedata
 from telethon import TelegramClient, events
 from PIL import Image, ImageDraw, ImageFont
@@ -14,6 +15,16 @@ TARGET_CHAT = "@akazagodmodeelite"
 
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
+# ================= FONT SETUP =================
+# Server-la font illana auto-va clean font download pannidum
+FONT_FILE = "arial_bold.ttf"
+if not os.path.exists(FONT_FILE):
+    try:
+        url = "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf"
+        urllib.request.urlretrieve(url, FONT_FILE)
+    except Exception as e:
+        print(f"[!] Font download error: {e}")
+
 # ================= IMAGE GENERATOR =================
 def generate_prediction_card(period, signal, number):
     if not os.path.exists("template.png"):
@@ -21,58 +32,46 @@ def generate_prediction_card(period, signal, number):
         return None
 
     try:
-        base_img = Image.open("template.png").convert("RGBA")
-        width, height = base_img.size
+        base_img = Image.open("template.png").convert("RGB")
         draw = ImageDraw.Draw(base_img)
         
-        # FreeType font default-ah Linux system fonts load pannuvom
-        font_path = None
-        possible_fonts = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "DejaVuSans-Bold.ttf"
-        ]
-        for p in possible_fonts:
-            if os.path.exists(p):
-                font_path = p
-                break
-
-        if font_path:
-            font = ImageFont.truetype(font_path, 42)
-        else:
-            try:
-                font = ImageFont.truetype("arial.ttf", 42)
-            except Exception:
-                font = ImageFont.load_default()
+        # Font load panrom
+        try:
+            font = ImageFont.truetype(FONT_FILE, 36)
+        except Exception:
+            font = ImageFont.load_default()
 
         sig_upper = signal.upper()
         if "GREEN" in sig_upper or "SMALL" in sig_upper:
             sig_color = (0, 255, 128)      # Neon Green
         elif "RED" in sig_upper or "BIG" in sig_upper:
-            sig_color = (255, 50, 70)       # Neon Red
+            sig_color = (255, 60, 80)       # Neon Red
         else:
             sig_color = (0, 220, 255)       # Cyan Blue
 
-        # Puranana [PERIOD] [SIGNAL] [NUMBER] dummy text-ah cover panna dark glow box
-        box_y1, box_y2 = 410, 475
-        draw.rectangle([(145, box_y1), (355, box_y2)], fill=(11, 23, 44), outline=(0, 220, 255), width=2)
-        draw.rectangle([(395, box_y1), (605, box_y2)], fill=(11, 23, 44), outline=(0, 220, 255), width=2)
-        draw.rectangle([(645, box_y1), (855, box_y2)], fill=(11, 23, 44), outline=(0, 220, 255), width=2)
+        # Purana dummy text [PERIOD], [SIGNAL], [NUMBER]-ah cover panna dark background patch
+        # 1024x1024 exact boxes
+        draw.rectangle([(150, 412), (355, 470)], fill=(7, 14, 27))
+        draw.rectangle([(400, 412), (600, 470)], fill=(7, 14, 27))
+        draw.rectangle([(648, 412), (855, 470)], fill=(7, 14, 27))
 
-        # Center alignment function
-        def draw_centered_text(box_x_center, y_center, text, text_color):
-            bbox = draw.textbbox((0, 0), text, font=font)
-            w = bbox[2] - bbox[0]
-            h = bbox[3] - bbox[1]
-            draw.text((box_x_center - (w / 2), y_center - (h / 2) - 3), text, fill=text_color, font=font)
+        # Center draw helper function
+        def draw_centered(box_center_x, box_center_y, text, color):
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+                draw.text((box_center_x - (w / 2), box_center_y - (h / 2) - 2), text, fill=color, font=font)
+            except Exception:
+                draw.text((box_center_x - 30, box_center_y - 15), text, fill=color, font=font)
 
-        # Values-ah centers-la type panrom
-        draw_centered_text(250, 442, f"#{period}", (255, 255, 255))
-        draw_centered_text(500, 442, sig_upper, sig_color)
-        draw_centered_text(750, 442, str(number) if number else "--", (255, 215, 0))
+        # Boxes ulla print panrom
+        draw_centered(252, 441, f"#{period}", (255, 255, 255))
+        draw_centered(500, 441, sig_upper, sig_color)
+        draw_centered(751, 441, str(number) if number else "--", (255, 215, 0))
 
         out_file = "send_prediction.jpg"
-        base_img.convert("RGB").save(out_file, "JPEG", quality=95)
+        base_img.save(out_file, "JPEG", quality=95)
         return out_file
     except Exception as img_err:
         print(f"[!] Image create error: {img_err}")
@@ -117,9 +116,7 @@ async def message_handler(event):
     if period and signal:
         print(f"[+] Prediction found: Period={period} | Signal={signal}")
         
-        # Verum contact mattum
         caption_text = "contact : @Gara00077"
-
         img_path = generate_prediction_card(period, signal, number)
         
         try:
