@@ -33,7 +33,6 @@ def format_prediction_card():
     num_val = current_prediction["number"] or "--"
     conf_val = current_prediction.get("confidence", 92)
 
-    # Table layout
     table_lines = "┌───┬────────┬────────┬────────┬────────┐\n"
     table_lines += "│ # │ PERIOD │ SIGNAL │ NUMBER │ RESULT │\n"
     table_lines += "├───┼────────┼────────┼────────┼────────┤\n"
@@ -74,23 +73,31 @@ def format_prediction_card():
 async def message_handler(event):
     global current_prediction, history_results, last_processed_period, total_wins, current_streak
 
+    # Image caption or direct text
     raw_content = event.message.message or event.raw_text or ""
     if not raw_content:
         return
 
     clean_text = unicodedata.normalize('NFKD', raw_content)
-    print("\n--- [SOURCE MESSAGE RECEIVED] ---")
+    print("\n================== [SOURCE MSG] ==================")
     print(clean_text)
+    print("==================================================")
 
-    # 1. PREDICTION SIGNAL CHECK
-    p_match = re.search(r'PERIOD[^\d]*(\d+)', clean_text, re.IGNORECASE)
-    s_match = re.search(r'\b(BIG|SMALL|GREEN|RED|VIOLET)\b', clean_text, re.IGNORECASE)
-    n_match = re.search(r'NUMBER[^\d]*(\d+[\s\/\-]+\d+|\d+)', clean_text, re.IGNORECASE)
+    # 1. NEW PREDICTION SIGNAL CHECK (EMOJI & BRACKET TOLERANT)
+    # Checks for digits after PERIOD even if brackets or arrows are present: ( 341 ) or => 341
+    p_match = re.search(r'PERIOD[^\d\n]*\(?\s*(\d+)\s*\)?', clean_text, re.IGNORECASE)
+    
+    # Searches directly for prediction words ignoring surrounding emojis
+    s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_text, re.IGNORECASE)
+    
+    # Numbers like 2/1, 2-1 or 9
+    n_match = re.search(r'NUMBER[^\d\n]*(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
 
-    is_result_msg = bool(re.search(r'(RESULT\s*=>|❌\s*LOSS|✅\s*WIN)', clean_text, re.IGNORECASE))
+    # Must not be a result summary card
+    is_result_header = bool(re.search(r'(RESULT\s*=>|❌\s*LOSS|✅\s*WIN)', clean_text, re.IGNORECASE))
 
-    if p_match and s_match and not is_result_msg:
-        period = p_match.group(1)
+    if p_match and s_match and not is_result_header:
+        period = p_match.group(1).lstrip("0") or p_match.group(1)
         signal = s_match.group(1).upper()
         number = n_match.group(1).strip() if n_match else "--"
 
@@ -101,12 +108,12 @@ async def message_handler(event):
             current_prediction["number"] = number
             current_prediction["confidence"] = random.randint(86, 96)
 
-            print(f"[+] Prediction Extracted: Period #{period} | Signal {signal} | Number {number}")
+            print(f"[MATCH SUCCESS] Period: #{period} | Signal: {signal} | Number: {number}")
             
             card_msg = format_prediction_card()
             try:
                 await client.send_message(TARGET_CHAT, card_msg)
-                print("[SUCCESS] Formatted Text Card Sent to Target!")
+                print("[SENT] Prediction Text Card posted to Target!")
             except Exception as send_err:
                 print(f"[!] Send error: {send_err}")
         return
@@ -117,8 +124,8 @@ async def message_handler(event):
 
     if is_win or is_loss:
         res_label = "WIN" if is_win else "LOSS"
-        res_p = re.search(r'PERIOD[^\d]*(\d+)', clean_text, re.IGNORECASE)
-        res_period = res_p.group(1) if res_p else (current_prediction["period"] or "--")
+        res_p = re.search(r'PERIOD[^\d\n]*#?\(?\s*(\d+)\s*\)?', clean_text, re.IGNORECASE)
+        res_period = res_p.group(1).lstrip("0") if res_p else (current_prediction["period"] or "--")
 
         if is_win:
             total_wins += 1
@@ -128,7 +135,6 @@ async def message_handler(event):
             current_streak = 0
             res_msg = f"🥺🥺🥺 **LOSS NEXT WILL RECOVER** 💔💔\n\n🎯 Period: #{res_period}\n\ncontact : @Gara00077"
 
-        # Table history update
         history_results.append({
             "period": f"#{res_period}",
             "signal": current_prediction["signal"] or "--",
@@ -140,7 +146,7 @@ async def message_handler(event):
             history_results = history_results[-10:]
 
         await client.send_message(TARGET_CHAT, res_msg)
-        print(f"[+] Result Message Sent: {res_label} for Period #{res_period}")
+        print(f"[SENT] Result message posted: {res_label} for Period #{res_period}")
         return
 
 print("[-] AKAZA AUTO Text-Bot is Running...")
