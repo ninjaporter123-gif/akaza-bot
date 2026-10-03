@@ -1,6 +1,7 @@
 import os
 import re
 import random
+import asyncio
 import threading
 import unicodedata
 from flask import Flask, jsonify, render_template_string
@@ -10,14 +11,11 @@ from telethon import TelegramClient, events
 # ================= TELEGRAM CONFIG =================
 API_ID = 37846916
 API_HASH = "4e3784d4d626f589b50158e92cc93d5d"
-SESSION_NAME = "akaza_user"
+BOT_TOKEN = "8905199041:AAFSlBBlX73hpyk2M2iAyD2w7IvIF8mBTTQ"
 
-# Source channel mattum monitor pannum
 SOURCE_CHAT = "@predictor7700"
 
-client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
-
-# ================= REAL-TIME DATA =================
+# ================= SHARED DATA =================
 data_lock = threading.Lock()
 
 live_data = {
@@ -39,7 +37,7 @@ HTML_CODE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AKAZA ∞ LIVE PREDICTION VIEWER</title>
+    <title>AKAZA AUTO PREDICTION</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -242,13 +240,13 @@ HTML_CODE = """
                 </tr>
             </thead>
             <tbody id="historyRows">
-                <tr><td colspan="5" style="color: #667e99; padding: 16px;">Waiting for source channel prediction...</td></tr>
+                <tr><td colspan="5" style="color: #667e99; padding: 16px;">Connecting to source...</td></tr>
             </tbody>
         </table>
     </div>
 
     <div class="footer-note">
-        LIVE SOURCE STREAM | Contact: <a href="https://t.me/Gara00077" target="_blank">@Gara00077</a>
+        LIVE ENGINE | Contact: <a href="https://t.me/Gara00077" target="_blank">@Gara00077</a>
     </div>
 </div>
 
@@ -320,90 +318,90 @@ def api_live():
     with data_lock:
         return jsonify(live_data)
 
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    server.run(host="0.0.0.0", port=port)
+# ================= TELETHON BACKGROUND THREAD =================
+def run_telethon():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-# ================= SOURCE PARSER =================
-async def process_source_message(message):
-    global last_processed_period
+    client = TelegramClient("bot_session", API_ID, API_HASH)
 
-    text = message.message or message.text or ""
-    if not text:
-        return
+    async def main():
+        global last_processed_period
 
-    clean_text = unicodedata.normalize('NFKD', text)
-    clean_upper = clean_text.upper()
+        await client.start(bot_token=BOT_TOKEN)
+        print("[+] Telegram Bot connected successfully!")
 
-    print(f"\n[SOURCE DETECTED]:\n{clean_text}\n")
+        @client.on(events.NewMessage(chats=SOURCE_CHAT))
+        @client.on(events.MessageEdited(chats=SOURCE_CHAT))
+        async def handler(event):
+            global last_processed_period
 
-    # 1. PREDICTION SIGNAL CHECK
-    p_match = re.search(r'PERIOD[^\d\n]*\(?\s*(\d{2,4})\s*\)?', clean_text, re.IGNORECASE)
-    if not p_match:
-        p_match = re.search(r'#?(\d{3,4})', clean_text)
+            text = event.message.message or event.message.text or ""
+            if not text:
+                return
 
-    s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_upper)
-    n_match = re.search(r'NUMBER[^\d\n]*(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
+            clean_text = unicodedata.normalize('NFKD', text)
+            clean_upper = clean_text.upper()
 
-    is_result = bool(re.search(r'(RESULT\s*=>|NUM\s*:\s*\d+|❌\s*LOSS|LOSS\s*=>)', clean_text, re.IGNORECASE))
+            # Prediction
+            p_match = re.search(r'PERIOD[^\d\n]*\(?\s*(\d{2,4})\s*\)?', clean_text, re.IGNORECASE) or re.search(r'#?(\d{3,4})', clean_text)
+            s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_upper)
+            n_match = re.search(r'NUMBER[^\d\n]*(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
+            is_result = bool(re.search(r'(RESULT\s*=>|NUM\s*:\s*\d+|❌\s*LOSS|LOSS\s*=>)', clean_text, re.IGNORECASE))
 
-    if p_match and s_match and not is_result:
-        period = p_match.group(1).lstrip("0") or p_match.group(1)
-        signal = s_match.group(1)
-        number = n_match.group(1).strip() if n_match else "--"
+            if p_match and s_match and not is_result:
+                period = p_match.group(1).lstrip("0") or p_match.group(1)
+                signal = s_match.group(1)
+                number = n_match.group(1).strip() if n_match else "--"
 
-        if period != last_processed_period:
-            last_processed_period = period
-            with data_lock:
-                live_data["period"] = period
-                live_data["signal"] = signal
-                live_data["number"] = number
-                live_data["confidence"] = random.randint(86, 96)
+                if period != last_processed_period:
+                    last_processed_period = period
+                    with data_lock:
+                        live_data["period"] = period
+                        live_data["signal"] = signal
+                        live_data["number"] = number
+                        live_data["confidence"] = random.randint(86, 96)
+                    print(f"[HTML UPDATED] Period: #{period} | Signal: {signal}")
+                return
 
-            print(f"[HTML VIEWER UPDATED] Period: #{period} | Signal: {signal} | Number: {number}")
-        return
+            # Result
+            is_win = bool(re.search(r'(\bWIN\b|✅\s*WIN)', clean_text, re.IGNORECASE)) and "WINGO" not in clean_upper
+            is_loss = bool(re.search(r'(\bLOSS\b|\bLOSE\b|❌\s*LOSS)', clean_text, re.IGNORECASE))
 
-    # 2. RESULT CHECK (WIN / LOSS)
-    is_win = bool(re.search(r'(\bWIN\b|✅\s*WIN)', clean_text, re.IGNORECASE)) and "WINGO" not in clean_upper
-    is_loss = bool(re.search(r'(\bLOSS\b|\bLOSE\b|❌\s*LOSS)', clean_text, re.IGNORECASE))
+            if is_win or is_loss:
+                res_label = "WIN" if is_win else "LOSS"
+                res_p = re.search(r'#?(\d{3,4})', clean_text)
+                res_period = res_p.group(1).lstrip("0") if res_p else live_data["period"]
 
-    if is_win or is_loss:
-        res_label = "WIN" if is_win else "LOSS"
-        res_p = re.search(r'#?(\d{3,4})', clean_text)
-        res_period = res_p.group(1).lstrip("0") if res_p else live_data["period"]
+                with data_lock:
+                    if is_win:
+                        live_data["wins"] += 1
+                        live_data["streak"] += 1
+                    else:
+                        live_data["streak"] = 0
 
-        with data_lock:
-            if is_win:
-                live_data["wins"] += 1
-                live_data["streak"] += 1
-            else:
-                live_data["streak"] = 0
+                    live_data["history"].append({
+                        "period": res_period,
+                        "signal": live_data["signal"],
+                        "number": live_data["number"],
+                        "result": res_label
+                    })
+                    if len(live_data["history"]) > 10:
+                        live_data["history"] = live_data["history"][-10:]
 
-            live_data["history"].append({
-                "period": res_period,
-                "signal": live_data["signal"],
-                "number": live_data["number"],
-                "result": res_label
-            })
-            if len(live_data["history"]) > 10:
-                live_data["history"] = live_data["history"][-10:]
+                print(f"[RESULT] {res_label} for Period #{res_period}")
 
-        print(f"[RESULT CAPTURED] {res_label} for Period #{res_period}")
+        await client.run_until_disconnected()
 
-@client.on(events.NewMessage(chats=SOURCE_CHAT))
-async def on_new(event):
-    await process_source_message(event.message)
+    loop.run_until_complete(main())
 
-@client.on(events.MessageEdited(chats=SOURCE_CHAT))
-async def on_edit(event):
-    await process_source_message(event.message)
-
-# ================= RUN =================
+# ================= START MAIN APP =================
 if __name__ == "__main__":
-    t = threading.Thread(target=run_flask, daemon=True)
+    # Start Telegram background listener
+    t = threading.Thread(target=run_telethon, daemon=True)
     t.start()
-    print("[-] Web App running...")
-    print("[-] Telethon listening ONLY to Source Channel...")
-    client.start()
-    client.run_until_disconnected()
-        
+
+    # Flask binds directly to Railway assigned PORT
+    port = int(os.environ.get("PORT", 8080))
+    print(f"[-] Starting Flask server on 0.0.0.0:{port}...")
+    server.run(host="0.0.0.0", port=port)
