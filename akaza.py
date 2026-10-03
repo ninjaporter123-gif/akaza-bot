@@ -19,8 +19,6 @@ SOURCE_CHAT = "@predictor7700"
 # ================= SHARED DATA & TOKENS =================
 data_lock = threading.Lock()
 
-# Token format: { "TOKEN_KEY": expiry_epoch_timestamp }
-# Default 1 Master Lifetime Key:
 USER_TOKENS = {
     "NIRANJAN_VIP": time.time() + (365 * 86400 * 5)
 }
@@ -39,7 +37,10 @@ live_data = {
 
 last_processed_period = None
 
-# ================= EMBEDDED HTML VIEWER + ADMIN =================
+# ================= FLASK APP =================
+server = Flask(__name__)
+CORS(server)
+
 HTML_CODE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -179,12 +180,7 @@ HTML_CODE = """
             color: var(--neon-blue);
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th, td { padding: 8px 4px; text-align: center; }
         th { color: #8198b5; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
         tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
@@ -211,7 +207,6 @@ HTML_CODE = """
         }
         .admin-link:hover { color: var(--neon-blue); border-color: var(--neon-blue); }
 
-        /* MODALS */
         .overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -262,7 +257,6 @@ HTML_CODE = """
             width: 100%;
             margin-top: 6px;
         }
-        .cyber-btn:hover { opacity: 0.9; }
 
         .admin-token-row {
             display: flex;
@@ -278,7 +272,6 @@ HTML_CODE = """
 </head>
 <body>
 
-<!-- USER TOKEN LOGIN MODAL -->
 <div id="loginModal" class="overlay" style="display: flex;">
     <div class="modal-box">
         <h2 style="font-family: 'Orbitron'; font-size: 18px; color: var(--neon-blue); margin-bottom: 8px;">VIP AUTHENTICATION</h2>
@@ -290,7 +283,6 @@ HTML_CODE = """
     </div>
 </div>
 
-<!-- ADMIN MODAL -->
 <div id="adminModal" class="overlay" style="display: none;">
     <div class="modal-box" style="max-width: 440px; text-align: left;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -301,7 +293,6 @@ HTML_CODE = """
         <div style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
             <label style="font-size: 12px; color: #8da4c4;">GENERATE NEW TOKEN</label>
             <input type="text" id="newTokenName" class="cyber-input" placeholder="Token Name (e.g. VIP_USER1)" style="text-align: left; padding: 8px 12px;">
-            
             <div style="display: flex; gap: 8px;">
                 <input type="number" id="newDuration" class="cyber-input" placeholder="Duration" style="width: 50%; text-align: center; padding: 8px;">
                 <select id="durationType" class="cyber-input" style="width: 50%; padding: 8px;">
@@ -320,7 +311,6 @@ HTML_CODE = """
     </div>
 </div>
 
-<!-- MAIN DASHBOARD -->
 <div class="dashboard">
     <div class="brand-header">
         <h1>⚡ AKAZA ∞ AUTO ⚡</h1>
@@ -419,10 +409,8 @@ HTML_CODE = """
             document.getElementById('loginModal').style.display = 'none';
             document.getElementById('timeRemainingText').innerText = formatTime(data.remaining_seconds);
 
-            // Period
             document.getElementById('periodBox').innerText = '#' + (data.period || '---');
 
-            // Signal
             const sigEl = document.getElementById('signalBox');
             const sigVal = (data.signal || 'WAIT').toUpperCase();
             sigEl.innerText = sigVal;
@@ -436,13 +424,11 @@ HTML_CODE = """
                 sigEl.classList.add('sig-blue');
             }
 
-            // Stats
             document.getElementById('numberBox').innerText = data.number || '--';
             document.getElementById('confBox').innerText = (data.confidence || 92) + '%';
             document.getElementById('winsBox').innerText = data.wins || 0;
             document.getElementById('streakBox').innerText = data.streak || 0;
 
-            // Table
             if (data.history && data.history.length > 0) {
                 let rowsHtml = '';
                 data.history.slice(-10).forEach((item, index) => {
@@ -464,7 +450,6 @@ HTML_CODE = """
         }
     }
 
-    // ADMIN LOGIC
     function openAdminPrompt() {
         const pass = prompt("ENTER ADMIN PASSWORD:");
         if (pass === "niranjan123") {
@@ -533,10 +518,6 @@ HTML_CODE = """
 </html>
 """
 
-# ================= FLASK SERVER & APIS =================
-server = Flask(__name__)
-CORS(server)
-
 @server.route('/')
 def home():
     return render_template_string(HTML_CODE)
@@ -559,9 +540,23 @@ def api_live():
         resp["remaining_seconds"] = int(expiry - current_time)
         return jsonify(resp)
 
-# ADMIN APIS (PASSWORD PROTECTED)
 @server.route('/api/admin/tokens')
 def get_tokens():
     pwd = request.args.get('pass')
     if pwd != ADMIN_PASS:
-        
+        return jsonify({"status": "error", "msg": "Unauthorized"}), 403
+
+    current_time = time.time()
+    tokens_list = []
+    with data_lock:
+        for t, exp in USER_TOKENS.items():
+            rem = max(0, int(exp - current_time))
+            tokens_list.append({"token": t, "remaining_seconds": rem})
+
+    return jsonify({"status": "success", "tokens": tokens_list})
+
+@server.route('/api/admin/add_token')
+def add_token():
+    pwd = request.args.get('pass')
+    if pwd != ADMIN_PASS:
+        return jsoni
