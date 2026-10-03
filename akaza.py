@@ -34,7 +34,6 @@ def generate_prediction_card():
         base_img = Image.open("template.png").convert("RGB")
         draw = ImageDraw.Draw(base_img)
         
-        # Safe font loader
         font = None
         for font_name in ["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf", "arial.ttf"]:
             try:
@@ -47,12 +46,11 @@ def generate_prediction_card():
             font = ImageFont.load_default()
             font_top = font
 
-        # --- 1. CURRENT PREDICTION (TOP BOXES) ---
+        # --- 1. TOP CURRENT PREDICTION BOXES ---
         period_val = current_prediction["period"] or "--"
         sig_val = (current_prediction["signal"] or "--").upper()
         num_val = current_prediction["number"] or "--"
 
-        # Signal color
         if "GREEN" in sig_val or "SMALL" in sig_val:
             sig_color = (0, 255, 128)
         elif "RED" in sig_val or "BIG" in sig_val:
@@ -60,12 +58,11 @@ def generate_prediction_card():
         else:
             sig_color = (0, 220, 255)
 
-        # Top boxes patch (Clear previous placeholders)
+        # Clear top boxes
         draw.rectangle([(150, 412), (355, 470)], fill=(7, 14, 27))
         draw.rectangle([(400, 412), (600, 470)], fill=(7, 14, 27))
         draw.rectangle([(648, 412), (855, 470)], fill=(7, 14, 27))
 
-        # Top text draw
         draw.text((215, 428), f"#{period_val}", fill=(255, 255, 255), font=font_top)
         draw.text((465, 428), sig_val, fill=sig_color, font=font_top)
         draw.text((725, 428), num_val, fill=(255, 215, 0), font=font_top)
@@ -74,23 +71,19 @@ def generate_prediction_card():
         row_start_y = 660
         row_height = 28
         
-        # Clean table area
         draw.rectangle([(145, 650), (875, 940)], fill=(8, 16, 32))
 
         for idx, item in enumerate(history_results[-10:]):
             curr_y = row_start_y + (idx * row_height)
-            
-            # Index #
             draw.text((165, curr_y), str(idx + 1), fill=(180, 190, 210), font=font)
-            # Period
             draw.text((245, curr_y), str(item.get("period", "--")), fill=(255, 255, 255), font=font)
-            # Signal
+            
             row_sig = str(item.get("signal", "--"))
             row_col = (0, 255, 128) if "GREEN" in row_sig or "SMALL" in row_sig else (255, 60, 80)
             draw.text((430, curr_y), row_sig, fill=row_col, font=font)
-            # Number
+            
             draw.text((615, curr_y), str(item.get("number", "--")), fill=(255, 215, 0), font=font)
-            # Result (WIN / LOSS)
+            
             res_val = str(item.get("result", "--"))
             res_col = (0, 255, 128) if "WIN" in res_val else (255, 60, 80)
             draw.text((760, curr_y), res_val, fill=res_col, font=font)
@@ -99,7 +92,7 @@ def generate_prediction_card():
         base_img.save(out_file, "JPEG", quality=95)
         return out_file
     except Exception as img_err:
-        print(f"[!] Error creating prediction card: {img_err}")
+        print(f"[!] Error creating card: {img_err}")
         return None
 
 # ================= MESSAGE LISTENER =================
@@ -110,16 +103,58 @@ async def message_handler(event):
     if not raw_text:
         return
 
-    # Normalize stylized unicode math fonts
     clean_text = unicodedata.normalize('NFKD', raw_text)
 
-    # 1. WIN / LOSS CHECK
-    if "WIN" in clean_text.upper() or "LOSS" in clean_text.upper() or "LOSE" in clean_text.upper():
-        is_win = "WIN" in clean_text.upper()
-        res_label = "WIN" if is_win else "LOSS"
+    # ---------------- 1. FIRST CHECK: NEW PREDICTION SIGNAL ----------------
+    # Prediction vandhirundha modhalla idhu trigger aaganum
+    p_match = re.search(r'PERIOD.*?\(?\s*(\d+)\s*\)?', clean_text, re.IGNORECASE)
+    s_match = re.search(r'SIGNAL.*?(BIG|SMALL|GREEN|RED|VIOLET)', clean_text, re.IGNORECASE)
+    
+    if not s_match:
+        # Fallback if SIGNAL emoji format
+        s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_text, re.IGNORECASE)
 
-        p_match = re.search(r'PERIOD.*?#?(\d+)', clean_text, re.IGNORECASE)
-        res_period = p_match.group(1) if p_match else (current_prediction["period"] or "--")
+    n_match = re.search(r'NUMBER.*?(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
+
+    # Idhu Prediction message-ah nu verify panrom (SIGNAL koodave PERIOD irukanum)
+    is_prediction_msg = bool(p_match and s_match and ("SIGNAL" in clean_text.upper() or "WINGO" in clean_text.upper()))
+
+    if is_prediction_msg:
+        period = p_match.group(1)
+        signal = s_match.group(1).upper()
+        number = n_match.group(1).strip() if n_match else ""
+
+        # Duplicate round avoid panrom
+        if period != last_processed_period:
+            last_processed_period = period
+            current_prediction["period"] = period
+            current_prediction["signal"] = signal
+            current_prediction["number"] = number
+
+            print(f"[+] Prediction Match: Period={period} | Signal={signal} | Number={number}")
+            
+            img_path = generate_prediction_card()
+            caption_text = "contact : @Gara00077"
+
+            try:
+                if img_path and os.path.exists(img_path):
+                    await client.send_file(TARGET_CHAT, img_path, caption=caption_text)
+                    print("[SUCCESS] Prediction card sent!")
+                else:
+                    await client.send_message(TARGET_CHAT, caption_text)
+            except Exception as send_err:
+                print(f"[!] Send error: {send_err}")
+        return  # Prediction process aana apram keezha irukura Win check-ku pogaathu!
+
+    # ---------------- 2. SECOND CHECK: WIN / LOSS RESULT ----------------
+    # 'WinGo'-vai ignore panni strictly standalone WIN or LOSS check
+    is_win = bool(re.search(r'(^|\s|✅)\s*WIN(\s|!|$)', clean_text, re.IGNORECASE))
+    is_loss = bool(re.search(r'(^|\s|❌)\s*LOSS(\s|!|$)|LOSE', clean_text, re.IGNORECASE))
+
+    if is_win or is_loss:
+        res_label = "WIN" if is_win else "LOSS"
+        res_p = re.search(r'PERIOD.*?#?(\d+)', clean_text, re.IGNORECASE)
+        res_period = res_p.group(1) if res_p else (current_prediction["period"] or "--")
 
         history_results.append({
             "period": res_period,
@@ -137,44 +172,9 @@ async def message_handler(event):
             res_msg = f"🥺🥺🥺 **LOSS NEXT WILL RECOVER** 💔💔\n\n🎯 Period: #{res_period}\n\ncontact : @Gara00077"
 
         await client.send_message(TARGET_CHAT, res_msg)
-        print(f"[+] Result: {res_label} for Period {res_period}")
+        print(f"[+] Result handled: {res_label} for Period #{res_period}")
         return
-
-    # 2. PREDICTION SIGNAL PARSING (EMOJI-SAFE REGEX)
-    # Extracts period inside brackets like ( 341 ) or normal digits
-    p_match = re.search(r'PERIOD.*?\(?\s*(\d+)\s*\)?', clean_text, re.IGNORECASE)
-    period = p_match.group(1) if p_match else None
-
-    # Matches SMALL / BIG / RED / GREEN / VIOLET even if emojis/arrows surround it
-    s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_text, re.IGNORECASE)
-    signal = s_match.group(1).upper() if s_match else None
-
-    # Matches numbers like 2/1 even with gear/circle emojis
-    n_match = re.search(r'NUMBER.*?(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
-    number = n_match.group(1).strip() if n_match else ""
-
-    # Prevent duplicate posts for the same round
-    if period and signal and period != last_processed_period:
-        last_processed_period = period
-        current_prediction["period"] = period
-        current_prediction["signal"] = signal
-        current_prediction["number"] = number
-
-        print(f"[+] New Prediction Parsed: #{period} | {signal} | {number}")
-        
-        img_path = generate_prediction_card()
-        caption_text = "contact : @Gara00077"
-
-        try:
-            if img_path and os.path.exists(img_path):
-                await client.send_file(TARGET_CHAT, img_path, caption=caption_text)
-                print("[SUCCESS] Prediction card sent!")
-            else:
-                await client.send_message(TARGET_CHAT, caption_text)
-        except Exception as send_err:
-            print(f"[!] Send error: {send_err}")
 
 print("[-] AKAZA AUTO Bot is Running...")
 client.start()
 client.run_until_disconnected()
-        
