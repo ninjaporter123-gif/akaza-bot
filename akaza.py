@@ -68,31 +68,41 @@ def format_prediction_card():
     )
     return msg
 
-# Core processing function
-async def process_msg(msg_obj):
+# ================= MESSAGE PROCESSOR =================
+async def process_incoming(message):
     global current_prediction, history_results, last_processed_period, total_wins, current_streak
 
-    raw_text = msg_obj.message or msg_obj.text or ""
-    if not raw_text:
+    # Extract text from all possible Telethon attributes
+    text = ""
+    if hasattr(message, 'message') and message.message:
+        text = message.message
+    elif hasattr(message, 'text') and message.text:
+        text = message.text
+
+    if not text:
         return
 
-    # Normalize stylized fonts
-    clean_text = unicodedata.normalize('NFKD', raw_text)
+    # Normalize stylized italic/bold/gothic fonts into plain text
+    clean_text = unicodedata.normalize('NFKD', text)
     clean_upper = clean_text.upper()
 
-    print("\n[SOURCE RAW TEXT RECEIVED]:")
-    print(clean_text)
+    print(f"\n[INCOMING LOG]:\n{clean_text}\n")
 
-    # 1. CHECK IF THIS HAS PREDICTION DETAILS (PERIOD + SIGNAL)
+    # 1. PREDICTION EXTRACTION (Period + Signal)
+    # Check if text has any 3 or 4 digit period
     p_match = re.search(r'PERIOD[^\d\n]*\(?\s*(\d{2,4})\s*\)?', clean_text, re.IGNORECASE)
+    if not p_match:
+        p_match = re.search(r'#?(\d{3,4})', clean_text)
+
+    # Check for keywords
     s_match = re.search(r'(BIG|SMALL|GREEN|RED|VIOLET)', clean_upper)
     n_match = re.search(r'NUMBER[^\d\n]*(\d+\s*[\/\-]\s*\d+|\d+)', clean_text, re.IGNORECASE)
 
-    # Pure result header illa-nu check panrom
-    is_pure_result = bool(re.search(r'(RESULT\s*=>|❌\s*LOSS|LOSS\s*=>)', clean_text, re.IGNORECASE))
+    # Make sure this isn't the result card (LOSS NUM:9 BIG)
+    is_result_pattern = bool(re.search(r'(RESULT\s*=>|NUM\s*:\s*\d+|❌\s*LOSS|LOSS\s*=>)', clean_text, re.IGNORECASE))
 
-    # PREDICTION CARD TRIGGER
-    if p_match and s_match and not is_pure_result:
+    # TRIGGER PREDICTION IF FOUND
+    if p_match and s_match and not is_result_pattern:
         period = p_match.group(1).lstrip("0") or p_match.group(1)
         signal = s_match.group(1)
         number = n_match.group(1).strip() if n_match else "--"
@@ -104,24 +114,22 @@ async def process_msg(msg_obj):
             current_prediction["number"] = number
             current_prediction["confidence"] = random.randint(86, 96)
 
-            print(f"[TRIGGER PREDICTION] Period #{period} | Signal: {signal}")
+            print(f"[FOUND PREDICTION] Period: #{period} | Signal: {signal}")
             card_msg = format_prediction_card()
             try:
                 await client.send_message(TARGET_CHAT, card_msg)
-                print("[SENT] Prediction posted successfully!")
-            except Exception as err:
-                print(f"[!] Send error: {err}")
+                print("[SUCCESS] Sent Prediction Text Card to Target Channel!")
+            except Exception as e:
+                print(f"[ERROR SENDING CARD]: {e}")
         return
 
-    # 2. WIN / LOSS RESULTS TRIGGER
-    is_win = bool(re.search(r'(\bWIN\b|✅\s*WIN)', clean_text, re.IGNORECASE)) and not bool(re.search(r'WINGO', clean_text, re.IGNORECASE))
+    # 2. RESULT EXTRACTION (WIN / LOSS)
+    is_win = bool(re.search(r'(\bWIN\b|✅\s*WIN)', clean_text, re.IGNORECASE)) and "WINGO" not in clean_upper
     is_loss = bool(re.search(r'(\bLOSS\b|\bLOSE\b|❌\s*LOSS)', clean_text, re.IGNORECASE))
 
     if is_win or is_loss:
         res_label = "WIN" if is_win else "LOSS"
-        res_p = re.search(r'PERIOD[^\d\n]*#?\(?\s*(\d{2,4})\s*\)?', clean_text, re.IGNORECASE)
-        if not res_p:
-            res_p = re.search(r'#?(\d{3,4})', clean_text)
+        res_p = re.search(r'#?(\d{3,4})', clean_text)
         res_period = res_p.group(1).lstrip("0") if res_p else (current_prediction["period"] or "--")
 
         if is_win:
@@ -143,19 +151,18 @@ async def process_msg(msg_obj):
             history_results = history_results[-10:]
 
         await client.send_message(TARGET_CHAT, res_msg)
-        print(f"[SENT] Result: {res_label} for Period #{res_period}")
+        print(f"[SUCCESS] Sent {res_label} message to Target!")
         return
 
-# New message trigger
+# Telethon listeners for both new and edited posts
 @client.on(events.NewMessage(chats=SOURCE_CHAT))
-async def on_new_msg(event):
-    await process_msg(event.message)
+async def on_new(event):
+    await process_incoming(event.message)
 
-# Edited message trigger (Mukkiyam: Source bot message edit panna idhu catch pannum)
 @client.on(events.MessageEdited(chats=SOURCE_CHAT))
-async def on_edit_msg(event):
-    await process_msg(event.message)
+async def on_edit(event):
+    await process_incoming(event.message)
 
-print("[-] AKAZA AUTO Bot (with Edit Listener) is Running...")
+print("[-] Bot listening to source channel...")
 client.start()
 client.run_until_disconnected()
