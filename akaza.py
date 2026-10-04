@@ -450,7 +450,6 @@ HTML_CODE = """
         }
     }
 
-    // ADMIN LOGIC WITH POST APIS
     function openAdminPrompt() {
         const pass = prompt("ENTER ADMIN PASSWORD:");
         if (pass === "niranjan123") {
@@ -517,7 +516,7 @@ HTML_CODE = """
                 alert(data.msg || 'Failed to create token');
             }
         } catch (e) {
-            alert("Network error creating token: " + e);
+            alert("Network error: " + e);
         }
     }
 
@@ -555,4 +554,6 @@ def api_live():
 
         expiry = USER_TOKENS[token]
         if current_time > expiry:
-            return jsonify({"access": False, "ms
+            return jsonify({"access": False, "msg": "Your Access Token has Expired!"})
+
+        r
