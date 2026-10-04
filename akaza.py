@@ -8,6 +8,7 @@ import unicodedata
 from flask import Flask, jsonify, request, render_template_string
 from flask_cors import CORS
 from telethon import TelegramClient, events
+from telethon.sessions import MemorySession
 
 # ================= TELEGRAM CONFIG =================
 API_ID = 37846916
@@ -37,7 +38,7 @@ live_data = {
 
 last_processed_period = None
 
-# ================= FLASK APP =================
+# ================= FLASK SERVER =================
 server = Flask(__name__)
 CORS(server)
 
@@ -543,6 +544,10 @@ HTML_CODE = """
 def home():
     return render_template_string(HTML_CODE)
 
+@server.route('/health')
+def health():
+    return "OK", 200
+
 @server.route('/api/live')
 def api_live():
     token = request.args.get('token', '').strip()
@@ -553,7 +558,4 @@ def api_live():
             return jsonify({"access": False, "msg": "Invalid Token. Access Denied!"})
 
         expiry = USER_TOKENS[token]
-        if current_time > expiry:
-            return jsonify({"access": False, "msg": "Your Access Token has Expired!"})
-
-        r
+        if current_time
