@@ -544,10 +544,6 @@ HTML_CODE = """
 def home():
     return render_template_string(HTML_CODE)
 
-@server.route('/health')
-def health():
-    return "OK", 200
-
 @server.route('/api/live')
 def api_live():
     token = request.args.get('token', '').strip()
@@ -558,4 +554,5 @@ def api_live():
             return jsonify({"access": False, "msg": "Invalid Token. Access Denied!"})
 
         expiry = USER_TOKENS[token]
-        if current_time
+        if current_time > expiry:
+            return jsonify({"access": False, "msg"
