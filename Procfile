@@ -1,1 +1,1 @@
-web: python akaza.py
+worker: npm start\n
